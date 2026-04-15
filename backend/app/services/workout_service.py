@@ -93,7 +93,9 @@ def replace_exercise(
     - same specificMuscle (ex: "Lats", "Quadriceps"),
     - same difficulty,
     - type == "Strength",
-    and we exclude the current exercise itself.
+    and we exclude:
+    - the current exercise itself
+    - all exerciseIds already present in the workout (from req.existingExerciseIds).
     """
 
     current = (
@@ -110,6 +112,7 @@ def replace_exercise(
         .filter(ExerciseORM.difficulty == current.difficulty)
         .filter(ExerciseORM.type == "Strength")
         .filter(ExerciseORM.id != current.id)
+        .filter(~ExerciseORM.id.in_(req.existingExerciseIds))
     )
 
     candidates = query.all()

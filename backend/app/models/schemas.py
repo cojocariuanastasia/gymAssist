@@ -60,6 +60,7 @@ class GenerateWorkoutRequest(BaseModel):
 class ReplaceExerciseRequest(BaseModel):
     workoutExerciseId: str
     currentExerciseId: str
+    existingExerciseIds: list[str]
 
 
 class ReplaceExerciseResponse(BaseModel):

@@ -6,13 +6,13 @@ const MUSCLE_GROUPS = ["Back", "Chest", "Legs", "Abdominals", "Glutes", "Shoulde
 const DIFFICULTIES = ["Beginner", "Intermediate", "Expert"];
 
 export default function App() {
-  const [screen, setScreen] = useState("select");       // "select" | "difficulty" | "workout"
+  const [screen, setScreen] = useState("select");      
   const [selectedMuscle, setSelectedMuscle] = useState(null);
   const [selectedDifficulty, setSelectedDifficulty] = useState(null);
-  const [workout, setWorkout] = useState(null);         // Workout object from API
+  const [workout, setWorkout] = useState(null);       
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);             // legacy inline error text
-  const [toast, setToast] = useState(null);             // { type: 'error' | 'info', message: string }
+  const [error, setError] = useState(null);         
+  const [toast, setToast] = useState(null);        
 
   const showToast = (message, type = "error") => {
     setToast({ message, type });
@@ -79,12 +79,15 @@ export default function App() {
   const handleReplace = async (exercise) => {
     setError(null);
     try {
+      const existingExerciseIds = workout?.exercises.map((ex) => ex.exerciseId) ?? [];
+
       const res = await fetch(`${API}/api/workout/${workout.id}/replace`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           workoutExerciseId: exercise.workoutExerciseId,
           currentExerciseId: exercise.exerciseId,
+          existingExerciseIds,
         }),
       });
       if (!res.ok) {
