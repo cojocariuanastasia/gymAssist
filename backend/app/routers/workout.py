@@ -18,7 +18,14 @@ def get_db():
 
 @router.post("/generate")
 async def generate(req: GenerateWorkoutRequest, db: Session = Depends(get_db)):
-    workout = generate_workout(db, req)
+    """Generate a workout or return 404 if no exercises match filters."""
+
+    try:
+        workout = generate_workout(db, req)
+    except ValueError as exc:
+        # No exercises found for the given filters
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     return workout
 
 

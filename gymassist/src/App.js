@@ -11,7 +11,16 @@ export default function App() {
   const [selectedDifficulty, setSelectedDifficulty] = useState(null);
   const [workout, setWorkout] = useState(null);         // Workout object from API
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState(null);             // legacy inline error text
+  const [toast, setToast] = useState(null);             // { type: 'error' | 'info', message: string }
+
+  const showToast = (message, type = "error") => {
+    setToast({ message, type });
+    // Auto-hide after 4 seconds
+    setTimeout(() => {
+      setToast((current) => (current?.message === message ? null : current));
+    }, 4000);
+  };
 
   // helpers to read sets/reps from the sets array
   const getSetsCount = (exercise) => exercise.sets.length;
@@ -32,12 +41,36 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ muscleGroup: selectedMuscle, difficulty }),
       });
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      if (!res.ok) {
+        let message = "We couldn't generate a workout. Please try another combination.";
+
+        try {
+          const errorBody = await res.json();
+          if (typeof errorBody?.detail === "string") {
+            message = errorBody.detail;
+          } else if (res.status === 404) {
+            message = "No exercises found for this muscle group and difficulty.";
+          }
+        } catch {
+          // Ignore JSON parse errors and fall back to the generic message
+        }
+
+        throw new Error(message);
+      }
+
       const data = await res.json();
       setWorkout(data);
       setScreen("workout");
     } catch (err) {
-      setError(err.message);
+      if (err instanceof Error) {
+        if (err.message === "Failed to fetch") {
+          showToast("We couldn't reach the server. Please make sure the GymAssist backend is running.");
+        } else {
+          showToast(err.message);
+        }
+      } else {
+        showToast("Something went wrong. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -54,7 +87,21 @@ export default function App() {
           currentExerciseId: exercise.exerciseId,
         }),
       });
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      if (!res.ok) {
+        let message = "We couldn't find a replacement exercise.";
+
+        try {
+          const errorBody = await res.json();
+          if (typeof errorBody?.detail === "string") {
+            message = errorBody.detail;
+          }
+        } catch {
+          // Ignore JSON parse errors
+        }
+
+        throw new Error(message);
+      }
+
       const replacement = await res.json();
       setWorkout((prev) => ({
         ...prev,
@@ -63,7 +110,15 @@ export default function App() {
         ),
       }));
     } catch (err) {
-      setError(err.message);
+      if (err instanceof Error) {
+        if (err.message === "Failed to fetch") {
+          showToast("We couldn't reach the server. Please make sure the GymAssist backend is running.");
+        } else {
+          showToast(err.message);
+        }
+      } else {
+        showToast("Something went wrong. Please try again.");
+      }
     }
   };
 
@@ -98,6 +153,16 @@ export default function App() {
   if (screen === "select") {
     return (
       <div style={styles.container}>
+        {toast && (
+          <div
+            style={{
+              ...styles.toast,
+              ...(toast.type === "error" ? styles.toastError : styles.toastInfo),
+            }}
+          >
+            {toast.message}
+          </div>
+        )}
         <h2 style={styles.title}>What do you train today?</h2>
         <div style={styles.buttonGroup}>
           {MUSCLE_GROUPS.map((muscle) => (
@@ -118,6 +183,16 @@ export default function App() {
   if (screen === "difficulty") {
     return (
       <div style={styles.container}>
+        {toast && (
+          <div
+            style={{
+              ...styles.toast,
+              ...(toast.type === "error" ? styles.toastError : styles.toastInfo),
+            }}
+          >
+            {toast.message}
+          </div>
+        )}
         <h2 style={styles.title}>Select difficulty</h2>
         <div style={styles.buttonGroup}>
           {DIFFICULTIES.map((d) => (
@@ -131,7 +206,6 @@ export default function App() {
             </button>
           ))}
         </div>
-        {error && <p style={styles.errorText}>{error}</p>}
         <button style={{ ...styles.backButton, marginTop: 24 }} onClick={() => setScreen("select")}>
           Back
         </button>
@@ -142,9 +216,17 @@ export default function App() {
   // SCREEN 3 — workout detail
   return (
     <div style={styles.container}>
+      {toast && (
+        <div
+          style={{
+            ...styles.toast,
+            ...(toast.type === "error" ? styles.toastError : styles.toastInfo),
+          }}
+        >
+          {toast.message}
+        </div>
+      )}
       <h2 style={styles.title}>{selectedMuscle} Workout</h2>
-
-      {error && <p style={styles.errorText}>{error}</p>}
 
       <div style={styles.workoutList}>
         {workout?.exercises.map((exercise) => (
@@ -312,9 +394,24 @@ const styles = {
     fontWeight: 600,
     cursor: "pointer",
   },
-  errorText: {
-    color: "#f87171",
-    fontSize: 13,
-    marginTop: 8,
+  toast: {
+    position: "fixed",
+    top: 16,
+    right: 16,
+    maxWidth: 320,
+    padding: "10px 14px",
+    borderRadius: 8,
+    fontSize: 14,
+    boxShadow: "0 10px 25px rgba(0,0,0,0.35)",
+    zIndex: 50,
+    textAlign: "left",
+  },
+  toastError: {
+    background: "#b91c1c",
+    color: "#fee2e2",
+  },
+  toastInfo: {
+    background: "#1d4ed8",
+    color: "#dbeafe",
   },
 };
