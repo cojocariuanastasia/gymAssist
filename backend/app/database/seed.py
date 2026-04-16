@@ -24,8 +24,6 @@ API_URL = "https://api.workoutapi.com/exercises"
 API_KEY = os.getenv("WORKOUT_API_KEY", "")
 LOCAL_JSON = Path(__file__).resolve().parent.parent / "data" / "exercises.json"
 
-# Limităm numărul de call-uri: 1 call pentru listă + N call-uri pentru imagini.
-# Default N=97 => total 98 call-uri (sub limita de 100).
 MAX_EXERCISES = int(os.getenv("SEED_MAX_EXERCISES", "97"))
 IMAGE_WORKERS = int(os.getenv("SEED_IMAGE_WORKERS", "6"))
 WRITE_LOCAL_JSON = os.getenv("SEED_WRITE_JSON", "1").strip().lower() not in {"0", "false", "no"}

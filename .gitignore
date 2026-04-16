@@ -1,5 +1,4 @@
 # Database
-*.db
 *.sqlite
 *.sqlite3
 
