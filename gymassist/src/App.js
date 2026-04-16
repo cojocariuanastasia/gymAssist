@@ -1,21 +1,190 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import WorkoutScreen from "./WorkoutScreen";
+import ProfileScreen from "./ProfileScreen";
 
 const API = "http://localhost:8000";
 
 const MUSCLE_GROUPS = ["Back", "Chest", "Legs", "Abdominals", "Glutes", "Shoulders", "Arms"];
 const DIFFICULTIES = ["Beginner", "Intermediate", "Expert"];
 
+// ─── Auth screens ────────────────────────────────────────────────────────────
+
+function LoginScreen({ onLogin, onGoRegister }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${API}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.detail || "Login failed");
+      }
+      const data = await res.json();
+      onLogin(data.token, data.username);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={s.container}>
+      <h1 style={s.brand}>GymAssist</h1>
+      <form onSubmit={handleSubmit} style={s.form}>
+        <input style={s.input} type="email" placeholder="Email" value={email}
+          onChange={(e) => setEmail(e.target.value)} required />
+        <input style={s.input} type="password" placeholder="Password" value={password}
+          onChange={(e) => setPassword(e.target.value)} required />
+        {error && <p style={s.error}>{error}</p>}
+        <button style={s.btnPrimary} type="submit" disabled={loading}>
+          {loading ? "Logging in..." : "Login"}
+        </button>
+        <button style={s.btnLink} type="button" onClick={onGoRegister}>
+          Don't have an account? Register
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function RegisterScreen({ onLogin, onGoLogin }) {
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${API}/api/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, email, password }),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.detail || "Registration failed");
+      }
+      const data = await res.json();
+      onLogin(data.token, data.username);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={s.container}>
+      <h1 style={s.brand}>GymAssist</h1>
+      <form onSubmit={handleSubmit} style={s.form}>
+        <input style={s.input} type="text" placeholder="Username" value={username}
+          onChange={(e) => setUsername(e.target.value)} required />
+        <input style={s.input} type="email" placeholder="Email" value={email}
+          onChange={(e) => setEmail(e.target.value)} required />
+        <input style={s.input} type="password" placeholder="Password" value={password}
+          onChange={(e) => setPassword(e.target.value)} required />
+        {error && <p style={s.error}>{error}</p>}
+        <button style={s.btnPrimary} type="submit" disabled={loading}>
+          {loading ? "Creating account..." : "Register"}
+        </button>
+        <button style={s.btnLink} type="button" onClick={onGoLogin}>
+          Already have an account? Login
+        </button>
+      </form>
+    </div>
+  );
+}
+
+// ─── Loading spinner ──────────────────────────────────────────────────────────
+
+function LoadingScreen({ muscle, difficulty }) {
+  return (
+    <div style={s.container}>
+      <div style={s.spinnerWrap}>
+        <div style={s.spinner} />
+        <p style={s.loadingTitle}>Building your workout...</p>
+        <p style={s.loadingSubtitle}>{muscle} · {difficulty}</p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Top nav bar (shown on select / difficulty screens) ──────────────────────
+
+function TopBar({ username, onGoProfile }) {
+  return (
+    <div style={s.topBar}>
+      <span style={s.appName}>GymAssist</span>
+      <button style={s.profileBtn} onClick={onGoProfile}>
+        {username} ›
+      </button>
+    </div>
+  );
+}
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
+
 export default function App() {
-  const [screen, setScreen] = useState("select");       // "select" | "difficulty" | "workout"
+  const [screen, setScreen] = useState("checking");
+  const [token, setToken] = useState(null);
+  const [username, setUsername] = useState("");
   const [selectedMuscle, setSelectedMuscle] = useState(null);
   const [selectedDifficulty, setSelectedDifficulty] = useState(null);
-  const [workout, setWorkout] = useState(null);         // Workout object from API
-  const [loading, setLoading] = useState(false);
+  const [workout, setWorkout] = useState(null);
   const [error, setError] = useState(null);
 
-  // helpers to read sets/reps from the sets array
-  const getSetsCount = (exercise) => exercise.sets.length;
-  const getReps = (exercise) => exercise.sets[0]?.reps ?? 0;
+  // Check stored token on mount
+  useEffect(() => {
+    const saved = localStorage.getItem("token");
+    if (!saved) { setScreen("login"); return; }
+    fetch(`${API}/api/profile`, { headers: { Authorization: `Bearer ${saved}` } })
+      .then((r) => {
+        if (!r.ok) throw new Error("expired");
+        return r.json();
+      })
+      .then((data) => {
+        setToken(saved);
+        setUsername(data.username);
+        setScreen("select");
+      })
+      .catch(() => {
+        localStorage.removeItem("token");
+        setScreen("login");
+      });
+  }, []);
+
+  const handleLogin = (tok, uname) => {
+    localStorage.setItem("token", tok);
+    setToken(tok);
+    setUsername(uname);
+    setScreen("select");
+  };
+
+  const handleLogout = async () => {
+    await fetch(`${API}/api/auth/logout`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => {});
+    localStorage.removeItem("token");
+    setToken(null);
+    setUsername("");
+    setScreen("login");
+  };
 
   const handleSelectMuscle = (muscle) => {
     setSelectedMuscle(muscle);
@@ -24,7 +193,7 @@ export default function App() {
 
   const handleSelectDifficulty = async (difficulty) => {
     setSelectedDifficulty(difficulty);
-    setLoading(true);
+    setScreen("loading");
     setError(null);
     try {
       const res = await fetch(`${API}/api/workout/generate`, {
@@ -38,283 +207,230 @@ export default function App() {
       setScreen("workout");
     } catch (err) {
       setError(err.message);
-    } finally {
-      setLoading(false);
+      setScreen("difficulty");
     }
   };
 
-  const handleReplace = async (exercise) => {
-    setError(null);
-    try {
-      const res = await fetch(`${API}/api/workout/${workout.id}/replace`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workoutExerciseId: exercise.workoutExerciseId,
-          currentExerciseId: exercise.exerciseId,
-        }),
-      });
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
-      const replacement = await res.json();
-      setWorkout((prev) => ({
-        ...prev,
-        exercises: prev.exercises.map((ex) =>
-          ex.workoutExerciseId === exercise.workoutExerciseId ? replacement : ex
-        ),
-      }));
-    } catch (err) {
-      setError(err.message);
-    }
-  };
+  // ── Screens ──────────────────────────────────────────────────────────────
 
-  const updateSets = (exerciseId, newSetsCount) => {
-    setWorkout((prev) => ({
-      ...prev,
-      exercises: prev.exercises.map((ex) => {
-        if (ex.workoutExerciseId !== exerciseId) return ex;
-        const currentReps = ex.sets[0]?.reps ?? 8;
-        const sets = Array.from({ length: newSetsCount }, (_, i) => ({
-          setNumber: i + 1,
-          weight: ex.sets[i]?.weight ?? null,
-          reps: ex.sets[i]?.reps ?? currentReps,
-          completed: ex.sets[i]?.completed ?? false,
-        }));
-        return { ...ex, sets };
-      }),
-    }));
-  };
-
-  const updateReps = (exerciseId, newReps) => {
-    setWorkout((prev) => ({
-      ...prev,
-      exercises: prev.exercises.map((ex) => {
-        if (ex.workoutExerciseId !== exerciseId) return ex;
-        return { ...ex, sets: ex.sets.map((s) => ({ ...s, reps: newReps }) )};
-      }),
-    }));
-  };
-
-  // SCREEN 1 — muscle group selection
-  if (screen === "select") {
+  if (screen === "checking") {
     return (
-      <div style={styles.container}>
-        <h2 style={styles.title}>What do you train today?</h2>
-        <div style={styles.buttonGroup}>
+      <div style={{ ...s.container, justifyContent: "center" }}>
+        <div style={s.spinner} />
+      </div>
+    );
+  }
+
+  if (screen === "login") {
+    return (
+      <LoginScreen
+        onLogin={handleLogin}
+        onGoRegister={() => setScreen("register")}
+      />
+    );
+  }
+
+  if (screen === "register") {
+    return (
+      <RegisterScreen
+        onLogin={handleLogin}
+        onGoLogin={() => setScreen("login")}
+      />
+    );
+  }
+
+  if (screen === "profile") {
+    return (
+      <ProfileScreen
+        token={token}
+        onStartTraining={() => setScreen("select")}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  if (screen === "loading") {
+    return <LoadingScreen muscle={selectedMuscle} difficulty={selectedDifficulty} />;
+  }
+
+  if (screen === "workout" && workout) {
+    return (
+      <WorkoutScreen
+        workout={workout}
+        token={token}
+        selectedMuscle={selectedMuscle}
+        selectedDifficulty={selectedDifficulty}
+        onComplete={() => setScreen("profile")}
+        onBack={() => setScreen("select")}
+      />
+    );
+  }
+
+  if (screen === "difficulty") {
+    return (
+      <div style={s.container}>
+        <TopBar username={username} onGoProfile={() => setScreen("profile")} />
+        <div style={s.inner}>
+          <h2 style={s.title}>Select difficulty</h2>
+          <p style={s.subtitle}>{selectedMuscle}</p>
+          <div style={s.btnGroup}>
+            {DIFFICULTIES.map((d) => (
+              <button key={d} style={s.muscleBtn} onClick={() => handleSelectDifficulty(d)}>
+                {d}
+              </button>
+            ))}
+          </div>
+          {error && <p style={s.error}>{error}</p>}
+          <button style={{ ...s.muscleBtn, background: "#2563eb", marginTop: 8 }}
+            onClick={() => setScreen("select")}>
+            Back
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // select screen (default)
+  return (
+    <div style={s.container}>
+      <TopBar username={username} onGoProfile={() => setScreen("profile")} />
+      <div style={s.inner}>
+        <h2 style={s.title}>What do you train today?</h2>
+        <div style={s.btnGroup}>
           {MUSCLE_GROUPS.map((muscle) => (
-            <button
-              key={muscle}
-              style={styles.muscleButton}
-              onClick={() => handleSelectMuscle(muscle)}
-            >
+            <button key={muscle} style={s.muscleBtn} onClick={() => handleSelectMuscle(muscle)}>
               {muscle}
             </button>
           ))}
         </div>
       </div>
-    );
-  }
-
-  // SCREEN 2 — difficulty selection
-  if (screen === "difficulty") {
-    return (
-      <div style={styles.container}>
-        <h2 style={styles.title}>Select difficulty</h2>
-        <div style={styles.buttonGroup}>
-          {DIFFICULTIES.map((d) => (
-            <button
-              key={d}
-              style={styles.muscleButton}
-              onClick={() => handleSelectDifficulty(d)}
-              disabled={loading}
-            >
-              {loading && selectedDifficulty === d ? "Loading..." : d}
-            </button>
-          ))}
-        </div>
-        {error && <p style={styles.errorText}>{error}</p>}
-        <button style={{ ...styles.backButton, marginTop: 24 }} onClick={() => setScreen("select")}>
-          Back
-        </button>
-      </div>
-    );
-  }
-
-  // SCREEN 3 — workout detail
-  return (
-    <div style={styles.container}>
-      <h2 style={styles.title}>{selectedMuscle} Workout</h2>
-
-      {error && <p style={styles.errorText}>{error}</p>}
-
-      <div style={styles.workoutList}>
-        {workout?.exercises.map((exercise) => (
-          <div key={exercise.workoutExerciseId} style={styles.card}>
-            <div style={styles.exerciseInfo}>
-              <div style={styles.exerciseName}>{exercise.name}</div>
-              <div style={styles.equipmentText}>Equipment: {exercise.equipment}</div>
-              <div style={styles.metricsRow}>
-                <label style={styles.metricLabel}>
-                  Sets
-                  <input
-                    style={styles.metricInput}
-                    type="number"
-                    min="1"
-                    value={getSetsCount(exercise)}
-                    onChange={(e) =>
-                      updateSets(exercise.workoutExerciseId, Number(e.target.value))
-                    }
-                  />
-                </label>
-                <label style={styles.metricLabel}>
-                  Reps
-                  <input
-                    style={styles.metricInput}
-                    type="number"
-                    min="1"
-                    value={getReps(exercise)}
-                    onChange={(e) =>
-                      updateReps(exercise.workoutExerciseId, Number(e.target.value))
-                    }
-                  />
-                </label>
-              </div>
-            </div>
-            <button style={styles.replaceButton} onClick={() => handleReplace(exercise)}>
-              Replace
-            </button>
-          </div>
-        ))}
-      </div>
-
-      <button style={styles.backButton} onClick={() => setScreen("select")}>
-        Back
-      </button>
     </div>
   );
 }
 
-const styles = {
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const styleTag = document.createElement("style");
+styleTag.innerHTML = `@keyframes spin { to { transform: rotate(360deg); } }`;
+document.head.appendChild(styleTag);
+
+const s = {
   container: {
     minHeight: "100vh",
-    padding: "32px 24px",
     fontFamily: "'Segoe UI', Arial, sans-serif",
-    textAlign: "center",
     display: "flex",
     flexDirection: "column",
-    justifyContent: "center",
     alignItems: "center",
     background: "#06162d",
     color: "#fff",
   },
-  title: {
-    marginBottom: 32,
-    fontSize: 30,
-    fontWeight: 700,
-    letterSpacing: 0.2,
-    color: "#fff",
-  },
-  buttonGroup: {
+  inner: {
+    flex: 1,
     display: "flex",
     flexDirection: "column",
-    gap: 12,
     alignItems: "center",
+    justifyContent: "center",
+    padding: "32px 24px",
     width: "100%",
-    maxWidth: 340,
+    boxSizing: "border-box",
   },
-  muscleButton: {
+  topBar: {
     width: "100%",
-    padding: "13px 20px",
-    fontSize: 15,
-    fontWeight: 500,
-    borderRadius: 999,
-    border: "none",
-    background: "#2e2e2e",
-    color: "#fff",
-    cursor: "pointer",
-  },
-  workoutList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 12,
-    width: "100%",
-    maxWidth: 380,
-    marginBottom: 20,
-  },
-  card: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 14,
-    padding: "16px 16px",
-    borderRadius: 20,
-    background: "#111827",
+    padding: "16px 20px",
+    borderBottom: "1px solid #1f2937",
+    boxSizing: "border-box",
   },
-  exerciseInfo: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 6,
-    textAlign: "left",
-    flex: 1,
-  },
-  exerciseName: {
-    fontSize: 17,
-    fontWeight: 700,
-    color: "#fff",
-  },
-  equipmentText: {
-    fontSize: 12,
-    color: "#9ca3af",
-    lineHeight: 1.4,
-  },
-  metricsRow: {
-    display: "flex",
-    gap: 12,
-    marginTop: 4,
-  },
-  metricLabel: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 5,
-    fontSize: 12,
+  appName: { fontSize: 18, fontWeight: 700, color: "#f97316" },
+  profileBtn: {
+    background: "none",
+    border: "1px solid #374151",
+    borderRadius: 999,
     color: "#d1d5db",
-    fontWeight: 500,
+    cursor: "pointer",
+    fontSize: 13,
+    padding: "6px 14px",
   },
-  metricInput: {
-    width: 72,
-    padding: "7px 10px",
-    borderRadius: 10,
-    border: "none",
-    background: "#000",
+  brand: {
+    fontSize: 36,
+    fontWeight: 800,
+    color: "#f97316",
+    marginBottom: 8,
+    letterSpacing: -0.5,
+  },
+  form: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 12,
+    width: "100%",
+    maxWidth: 320,
+  },
+  input: {
+    padding: "13px 16px",
+    borderRadius: 12,
+    border: "1px solid #374151",
+    background: "#111827",
     color: "#fff",
-    fontSize: 14,
+    fontSize: 15,
+    outline: "none",
   },
-  replaceButton: {
-    padding: "9px 16px",
+  btnPrimary: {
+    padding: "13px",
     borderRadius: 999,
     border: "none",
     background: "#f97316",
     color: "#fff",
-    fontSize: 14,
-    fontWeight: 600,
+    fontSize: 15,
+    fontWeight: 700,
     cursor: "pointer",
-    whiteSpace: "nowrap",
   },
-  backButton: {
-    marginTop: 8,
-    padding: "13px 20px",
+  btnLink: {
+    background: "none",
+    border: "none",
+    color: "#6b7280",
+    fontSize: 13,
+    cursor: "pointer",
+    textDecoration: "underline",
+    padding: 0,
+  },
+  title: { fontSize: 28, fontWeight: 700, marginBottom: 8 },
+  subtitle: { fontSize: 15, color: "#9ca3af", marginBottom: 20 },
+  btnGroup: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
     width: "100%",
     maxWidth: 340,
+  },
+  muscleBtn: {
+    padding: "13px 20px",
+    fontSize: 15,
+    fontWeight: 500,
     borderRadius: 999,
     border: "none",
-    background: "#2563eb",
+    background: "#1f2937",
     color: "#fff",
-    fontSize: 15,
-    fontWeight: 600,
     cursor: "pointer",
+    width: "100%",
   },
-  errorText: {
-    color: "#f87171",
-    fontSize: 13,
-    marginTop: 8,
+  spinnerWrap: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 20,
+    marginTop: 160,
   },
+  spinner: {
+    width: 52,
+    height: 52,
+    border: "5px solid #1f2937",
+    borderTop: "5px solid #f97316",
+    borderRadius: "50%",
+    animation: "spin 0.9s linear infinite",
+  },
+  loadingTitle: { fontSize: 20, fontWeight: 700, margin: 0 },
+  loadingSubtitle: { fontSize: 14, color: "#9ca3af", margin: 0 },
+  error: { color: "#f87171", fontSize: 13, marginTop: 4 },
 };
