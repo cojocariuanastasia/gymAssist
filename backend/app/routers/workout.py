@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.database.db import ExerciseORM
 from app.database.db import SessionLocal, WorkoutLogORM
 from app.models.schemas import GenerateWorkoutRequest, ReplaceExerciseRequest
 from app.services.auth_service import get_current_user
@@ -28,6 +29,7 @@ class LoggedExercise(BaseModel):
     equipment: str
     sets: int
     reps: int
+    weight: float | None = None
 
 
 class CompleteWorkoutRequest(BaseModel):
@@ -53,6 +55,16 @@ async def replace(
 ):
     replacement = replace_exercise(db=db, req=req)
     if replacement is None:
+        current = (
+            db.query(ExerciseORM)
+            .filter(ExerciseORM.id == req.currentExerciseId)
+            .first()
+        )
+        if current is not None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No alternative exercise found for the same specific muscle: {current.specificMuscle}.",
+            )
         raise HTTPException(status_code=404, detail="No replacement exercise found.")
     return replacement
 
@@ -68,10 +80,22 @@ def complete_workout(
     if not user:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+    today = date.today().isoformat()
+    existing_today = (
+        db.query(WorkoutLogORM)
+        .filter(WorkoutLogORM.user_id == user.id, WorkoutLogORM.date == today)
+        .first()
+    )
+    if existing_today is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="You already have a workout saved for today. Delete today's workout first if you want to create a new one.",
+        )
+
     log = WorkoutLogORM(
         id=str(uuid.uuid4()),
         user_id=user.id,
-        date=date.today().isoformat(),
+        date=today,
         muscle_group=req.muscleGroup,
         difficulty=req.difficulty,
         exercises_json=json.dumps([
@@ -81,6 +105,7 @@ def complete_workout(
                 "equipment": e.equipment,
                 "sets": e.sets,
                 "reps": e.reps,
+                "weight": e.weight,
             }
             for e in req.exercises
         ]),

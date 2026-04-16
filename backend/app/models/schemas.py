@@ -41,6 +41,7 @@ class WorkoutExercise(BaseModel):
     workoutExerciseId: str
     exerciseId: str
     name: str
+    specificMuscle: str
     equipment: str
     sets: list[SetEntry]
     description: Optional[str] = None
@@ -62,12 +63,14 @@ class GenerateWorkoutRequest(BaseModel):
 class ReplaceExerciseRequest(BaseModel):
     workoutExerciseId: str
     currentExerciseId: str
+    excludeExerciseIds: Optional[list[str]] = None
 
 
 class ReplaceExerciseResponse(BaseModel):
     workoutExerciseId: str
     exerciseId: str
     name: str
+    specificMuscle: str
     equipment: str
     sets: list[SetEntry]
     description: Optional[str] = None

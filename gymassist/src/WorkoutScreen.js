@@ -1,6 +1,10 @@
 import React, { useState } from "react";
 
 const API = "http://localhost:8000";
+const TIME_BASED_EXERCISES = new Set(["plank", "lateral plank", "wall sit"]);
+
+const isTimeBasedExercise = (name) =>
+  TIME_BASED_EXERCISES.has((name || "").trim().toLowerCase());
 
 export default function WorkoutScreen({
   workout,
@@ -10,7 +14,12 @@ export default function WorkoutScreen({
   onComplete,
   onBack,
 }) {
-  const [exercises, setExercises] = useState(workout.exercises);
+  const [exercises, setExercises] = useState(() =>
+    workout.exercises.map((exercise) => ({
+      ...exercise,
+      weight: exercise.weight ?? null,
+    }))
+  );
   const [checked, setChecked] = useState(() =>
     Object.fromEntries(workout.exercises.map((e) => [e.workoutExerciseId, true]))
   );
@@ -28,7 +37,7 @@ export default function WorkoutScreen({
     setExercises((prev) =>
       prev.map((ex) => {
         if (ex.workoutExerciseId !== exId) return ex;
-        const reps = ex.sets[0]?.reps ?? 8;
+        const reps = ex.sets[0]?.reps ?? (isTimeBasedExercise(ex.name) ? 30 : 8);
         return {
           ...ex,
           sets: Array.from({ length: count }, (_, i) => ({
@@ -52,6 +61,14 @@ export default function WorkoutScreen({
     );
   };
 
+  const updateWeight = (exId, weight) => {
+    setExercises((prev) =>
+      prev.map((ex) => (ex.workoutExerciseId !== exId ? ex : { ...ex, weight }))
+    );
+  };
+
+  const closeError = () => setError(null);
+
   const handleReplace = async (exercise) => {
     setError(null);
     try {
@@ -61,13 +78,25 @@ export default function WorkoutScreen({
         body: JSON.stringify({
           workoutExerciseId: exercise.workoutExerciseId,
           currentExerciseId: exercise.exerciseId,
+          excludeExerciseIds: exercises.map((item) => item.exerciseId),
         }),
       });
-      if (!res.ok) throw new Error("No replacement found");
+      if (!res.ok) {
+        let message = "No replacement found";
+        try {
+          const payload = await res.json();
+          message = payload.detail || message;
+        } catch {
+          // Keep the generic fallback if the response body is not JSON.
+        }
+        throw new Error(message);
+      }
       const replacement = await res.json();
       setExercises((prev) =>
         prev.map((ex) =>
-          ex.workoutExerciseId === exercise.workoutExerciseId ? replacement : ex
+          ex.workoutExerciseId === exercise.workoutExerciseId
+            ? { ...replacement, weight: null }
+            : ex
         )
       );
       setChecked((prev) => ({ ...prev, [replacement.workoutExerciseId]: true }));
@@ -100,10 +129,20 @@ export default function WorkoutScreen({
             equipment: e.equipment,
             sets: e.sets.length,
             reps: e.sets[0]?.reps ?? 0,
+            weight: e.weight === "" || e.weight == null ? null : Number(e.weight),
           })),
         }),
       });
-      if (!res.ok) throw new Error("Failed to save workout");
+      if (!res.ok) {
+        let message = "Failed to save workout";
+        try {
+          const payload = await res.json();
+          message = payload.detail || message;
+        } catch {
+          // Fallback to the generic message if the response body can't be parsed.
+        }
+        throw new Error(message);
+      }
       onComplete();
     } catch (err) {
       setError(err.message);
@@ -116,13 +155,24 @@ export default function WorkoutScreen({
     <div style={s.container}>
       <h2 style={s.title}>{selectedMuscle} · {selectedDifficulty}</h2>
 
-      {error && <p style={s.error}>{error}</p>}
+      {error && (
+        <div style={s.modalBackdrop} onClick={closeError}>
+          <div style={s.modalCard} onClick={(e) => e.stopPropagation()}>
+            <h3 style={s.modalTitle}>Something went wrong</h3>
+            <p style={s.modalText}>{error}</p>
+            <button style={s.modalButton} onClick={closeError}>
+              OK
+            </button>
+          </div>
+        </div>
+      )}
 
       <div style={s.list}>
         {exercises.map((exercise) => {
           const isChecked = checked[exercise.workoutExerciseId];
           const isExpanded = expandedDesc[exercise.workoutExerciseId];
           const imageUrl = `${API}/api/exercises/${exercise.exerciseId}/image`;
+          const isTimeBased = isTimeBasedExercise(exercise.name);
 
           return (
             <div
@@ -150,6 +200,10 @@ export default function WorkoutScreen({
 
               <div style={s.equipmentText}>Equipment: {exercise.equipment}</div>
 
+              <div style={s.specificMuscleText}>
+                Specific muscle: {exercise.specificMuscle}
+              </div>
+
               <img src={imageUrl} alt={exercise.name} style={s.image} />
 
               {isExpanded && exercise.description && (
@@ -170,7 +224,7 @@ export default function WorkoutScreen({
                   />
                 </label>
                 <label style={s.metricLabel}>
-                  Reps
+                  {isTimeBased ? "Seconds" : "Reps"}
                   <input
                     style={s.metricInput}
                     type="number"
@@ -178,6 +232,22 @@ export default function WorkoutScreen({
                     value={exercise.sets[0]?.reps ?? 0}
                     onChange={(e) =>
                       updateReps(exercise.workoutExerciseId, Number(e.target.value))
+                    }
+                  />
+                </label>
+                <label style={s.metricLabel}>
+                  Weight
+                  <input
+                    style={s.metricInput}
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={exercise.weight ?? ""}
+                    onChange={(e) =>
+                      updateWeight(
+                        exercise.workoutExerciseId,
+                        e.target.value === "" ? null : Number(e.target.value)
+                      )
                     }
                   />
                 </label>
@@ -266,6 +336,7 @@ const s = {
     padding: 0,
   },
   equipmentText: { fontSize: 12, color: "#9ca3af" },
+  specificMuscleText: { fontSize: 12, color: "#cbd5e1" },
   image: {
     width: "100%",
     maxHeight: 150,
@@ -339,4 +410,47 @@ const s = {
     cursor: "pointer",
   },
   error: { color: "#f87171", fontSize: 13, marginBottom: 8 },
+  modalBackdrop: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(2, 6, 23, 0.75)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+    zIndex: 60,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 380,
+    background: "#0f172a",
+    border: "1px solid #334155",
+    borderRadius: 20,
+    padding: 20,
+    boxShadow: "0 24px 80px rgba(0,0,0,0.45)",
+    textAlign: "center",
+  },
+  modalTitle: {
+    margin: 0,
+    fontSize: 20,
+    fontWeight: 800,
+    color: "#fff",
+  },
+  modalText: {
+    margin: "12px 0 18px",
+    fontSize: 14,
+    lineHeight: 1.6,
+    color: "#cbd5e1",
+  },
+  modalButton: {
+    minWidth: 120,
+    padding: "12px 18px",
+    borderRadius: 999,
+    border: "none",
+    background: "#f97316",
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: 700,
+    cursor: "pointer",
+  },
 };

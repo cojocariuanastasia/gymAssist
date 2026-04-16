@@ -24,6 +24,12 @@ API_URL = "https://api.workoutapi.com/exercises"
 API_KEY = os.getenv("WORKOUT_API_KEY", "")
 LOCAL_JSON = Path(__file__).resolve().parent.parent / "data" / "exercises.json"
 
+# Limităm numărul de call-uri: 1 call pentru listă + N call-uri pentru imagini.
+# Default N=97 => total 98 call-uri (sub limita de 100).
+MAX_EXERCISES = int(os.getenv("SEED_MAX_EXERCISES", "97"))
+IMAGE_WORKERS = int(os.getenv("SEED_IMAGE_WORKERS", "6"))
+WRITE_LOCAL_JSON = os.getenv("SEED_WRITE_JSON", "1").strip().lower() not in {"0", "false", "no"}
+
 MUSCLE_GROUP_MAP = {
     "BACK": "Back", "TRAPEZIUS": "Back",
     "CHEST": "Chest",
@@ -100,13 +106,22 @@ def _fetch_image(exercise_id: str) -> str | None:
 def _fetch_all_images_parallel(exercise_ids: list[str]) -> dict[str, str | None]:
     results: dict[str, str | None] = {}
     total = len(exercise_ids)
-    with ThreadPoolExecutor(max_workers=20) as executor:
+    if total == 0:
+        return results
+
+    # Prea multe request-uri simultane pot declanșa throttling; folosim un număr mic de workeri.
+    workers = max(1, min(IMAGE_WORKERS, total))
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {executor.submit(_fetch_image, eid): eid for eid in exercise_ids}
         done = 0
         for future in as_completed(futures):
             done += 1
             eid = futures[future]
-            results[eid] = future.result()
+            try:
+                results[eid] = future.result()
+            except Exception:
+                results[eid] = None
             print(f"  images: {done}/{total}", end="\r", flush=True)
     print()
     return results
@@ -119,7 +134,7 @@ def _seed_from_api(session: Session) -> int:
     exercises = _fetch_exercises()
     print(f"Fetched {len(exercises)} exercises from WorkoutAPI")
 
-    valid = []
+    valid: list[tuple[dict, str]] = []
     for ex in exercises:
         primary = ex.get("primaryMuscles", [])
         if not primary:
@@ -127,12 +142,18 @@ def _seed_from_api(session: Session) -> int:
         code = primary[0]["code"]
         group = MUSCLE_GROUP_MAP.get(code)
         if group is None:
-            print(f"  Skipping unknown muscle: {code}")
+            # nu consumăm call-uri pe imagini pentru mușchi necunoscuți
             continue
         valid.append((ex, group))
 
-    print(f"Fetching {len(valid)} images in parallel...")
+        # Respectăm limita de call-uri: max 97 exerciții => max 97 imagini.
+        if len(valid) >= MAX_EXERCISES:
+            break
+
+    print(f"Seeding {len(valid)} exercises (max={MAX_EXERCISES}). Fetching images...")
     images = _fetch_all_images_parallel([ex["id"] for ex, _ in valid])
+
+    records: list[dict] = []
 
     for ex, muscle_group in valid:
         category_codes = [c["code"] for c in ex.get("categories", [])]
@@ -140,17 +161,25 @@ def _seed_from_api(session: Session) -> int:
         equipment = CATEGORY_EQUIPMENT_MAP.get(category_codes[0], "Other") if category_codes else "Other"
         ex_type = TYPE_MAP.get(type_codes[0], "Isolation") if type_codes else "Isolation"
 
-        session.add(ExerciseORM(
-            id=ex["id"],
-            name=ex["name"],
-            muscleGroup=muscle_group,
-            specificMuscle=ex["primaryMuscles"][0]["name"],
-            equipment=equipment,
-            difficulty=_assign_difficulty(category_codes, type_codes),
-            type=ex_type,
-            description=ex.get("description", ""),
-            image=images.get(ex["id"]),
-        ))
+        rec = {
+            "id": ex["id"],
+            "name": ex["name"],
+            "muscleGroup": muscle_group,
+            "specificMuscle": ex["primaryMuscles"][0]["name"],
+            "equipment": equipment,
+            "difficulty": _assign_difficulty(category_codes, type_codes),
+            "type": ex_type,
+            "description": ex.get("description", ""),
+            "image": images.get(ex["id"]),
+        }
+
+        session.add(ExerciseORM(**rec))
+        records.append(rec)
+
+    if WRITE_LOCAL_JSON:
+        LOCAL_JSON.parent.mkdir(parents=True, exist_ok=True)
+        LOCAL_JSON.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"Wrote {len(records)} records to {LOCAL_JSON}")
 
     return len(valid)
 

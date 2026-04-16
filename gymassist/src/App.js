@@ -137,6 +137,30 @@ function TopBar({ username, onGoProfile }) {
   );
 }
 
+function RepeatWorkoutModal({ muscle, workout, loading, onRepeat, onNewDifficulty, onClose }) {
+  if (!muscle) return null;
+
+  return (
+    <div style={s.modalBackdrop} onClick={onClose}>
+      <div style={s.modalCard} onClick={(e) => e.stopPropagation()}>
+        <h3 style={s.modalTitle}>Previous workout found</h3>
+        <p style={s.modalText}>
+          You already trained {muscle} before.
+          {workout ? ` Last difficulty: ${workout.difficulty}.` : ""}
+        </p>
+        <div style={s.modalActions}>
+          <button style={s.modalSecondaryBtn} onClick={onNewDifficulty} disabled={loading}>
+            Try new difficulty
+          </button>
+          <button style={s.modalPrimaryBtn} onClick={onRepeat} disabled={loading}>
+            {loading ? "Loading..." : "Repeat last workout"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -147,25 +171,15 @@ export default function App() {
   const [selectedDifficulty, setSelectedDifficulty] = useState(null);
   const [workout, setWorkout] = useState(null);
   const [error, setError] = useState(null);
+  const [historyPrompt, setHistoryPrompt] = useState(null);
+  const [historyWorkout, setHistoryWorkout] = useState(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
-  // Check stored token on mount
   useEffect(() => {
-    const saved = localStorage.getItem("token");
-    if (!saved) { setScreen("login"); return; }
-    fetch(`${API}/api/profile`, { headers: { Authorization: `Bearer ${saved}` } })
-      .then((r) => {
-        if (!r.ok) throw new Error("expired");
-        return r.json();
-      })
-      .then((data) => {
-        setToken(saved);
-        setUsername(data.username);
-        setScreen("select");
-      })
-      .catch(() => {
-        localStorage.removeItem("token");
-        setScreen("login");
-      });
+    localStorage.removeItem("token");
+    setToken(null);
+    setUsername("");
+    setScreen("login");
   }, []);
 
   const handleLogin = (tok, uname) => {
@@ -186,9 +200,54 @@ export default function App() {
     setScreen("login");
   };
 
-  const handleSelectMuscle = (muscle) => {
+  const handleSelectMuscle = async (muscle) => {
     setSelectedMuscle(muscle);
+    setError(null);
+    setHistoryLoading(true);
+
+    try {
+      const res = await fetch(`${API}/api/profile/last-workout/${muscle}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setHistoryWorkout(data);
+        setHistoryPrompt(muscle);
+        return;
+      }
+
+      if (res.status === 404) {
+        setScreen("difficulty");
+        return;
+      }
+
+      throw new Error("Could not load previous workout history");
+    } catch (err) {
+      setError(err.message);
+      setScreen("difficulty");
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const closeHistoryPrompt = () => {
+    setHistoryPrompt(null);
+    setHistoryWorkout(null);
+  };
+
+  const goToNewDifficulty = () => {
+    closeHistoryPrompt();
     setScreen("difficulty");
+  };
+
+  const repeatLastWorkout = () => {
+    if (!historyWorkout) return;
+    closeHistoryPrompt();
+    setSelectedMuscle(historyWorkout.muscleGroup);
+    setSelectedDifficulty(historyWorkout.difficulty);
+    setWorkout(historyWorkout);
+    setScreen("workout");
   };
 
   const handleSelectDifficulty = async (difficulty) => {
@@ -297,8 +356,10 @@ export default function App() {
             ))}
           </div>
           {error && <p style={s.error}>{error}</p>}
-          <button style={{ ...s.muscleBtn, background: "#2563eb", marginTop: 8 }}
-            onClick={() => setScreen("select")}>
+          <button
+            style={{ ...s.muscleBtn, background: "#2563eb", marginTop: 8, maxWidth: 340 }}
+            onClick={() => setScreen("select")}
+          >
             Back
           </button>
         </div>
@@ -314,12 +375,26 @@ export default function App() {
         <h2 style={s.title}>What do you train today?</h2>
         <div style={s.btnGroup}>
           {MUSCLE_GROUPS.map((muscle) => (
-            <button key={muscle} style={s.muscleBtn} onClick={() => handleSelectMuscle(muscle)}>
+            <button
+              key={muscle}
+              style={s.muscleBtn}
+              onClick={() => handleSelectMuscle(muscle)}
+              disabled={historyLoading}
+            >
               {muscle}
             </button>
           ))}
         </div>
       </div>
+
+      <RepeatWorkoutModal
+        muscle={historyPrompt}
+        workout={historyWorkout}
+        loading={historyLoading}
+        onRepeat={repeatLastWorkout}
+        onNewDifficulty={goToNewDifficulty}
+        onClose={closeHistoryPrompt}
+      />
     </div>
   );
 }
@@ -449,4 +524,60 @@ const s = {
   loadingTitle: { fontSize: 20, fontWeight: 700, margin: 0 },
   loadingSubtitle: { fontSize: 14, color: "#9ca3af", margin: 0 },
   error: { color: "#f87171", fontSize: 13, marginTop: 4 },
+  modalBackdrop: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(2, 6, 23, 0.75)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+    zIndex: 50,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 360,
+    background: "#0f172a",
+    border: "1px solid #334155",
+    borderRadius: 20,
+    padding: 20,
+    boxShadow: "0 24px 80px rgba(0,0,0,0.45)",
+  },
+  modalTitle: {
+    margin: 0,
+    fontSize: 20,
+    fontWeight: 800,
+    color: "#fff",
+  },
+  modalText: {
+    margin: "12px 0 18px",
+    fontSize: 14,
+    lineHeight: 1.6,
+    color: "#cbd5e1",
+  },
+  modalActions: {
+    display: "flex",
+    gap: 10,
+    flexDirection: "column",
+  },
+  modalPrimaryBtn: {
+    padding: "12px 16px",
+    borderRadius: 999,
+    border: "none",
+    background: "#f97316",
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+  modalSecondaryBtn: {
+    padding: "12px 16px",
+    borderRadius: 999,
+    border: "1px solid #334155",
+    background: "transparent",
+    color: "#e2e8f0",
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: "pointer",
+  },
 };

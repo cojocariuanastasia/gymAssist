@@ -23,11 +23,22 @@ SETS_REPS_BY_DIFFICULTY: dict[Difficulty, tuple[int, int]] = {
     Difficulty.EXPERT: (5, 12),
 }
 
+TIME_BASED_EXERCISES = {"plank", "lateral plank", "wall sit"}
+SETS_SECONDS_BY_DIFFICULTY: dict[Difficulty, tuple[int, int]] = {
+    Difficulty.BEGINNER: (3, 20),
+    Difficulty.INTERMEDIATE: (4, 30),
+    Difficulty.EXPERT: (5, 45),
+}
 
-def _default_sets(difficulty: Difficulty) -> list[SetEntry]:
-    sets, reps = SETS_REPS_BY_DIFFICULTY[difficulty]
+
+def _default_sets(difficulty: Difficulty, exercise_name: str) -> list[SetEntry]:
+    sets, metric = (
+        SETS_SECONDS_BY_DIFFICULTY[difficulty]
+        if exercise_name.strip().lower() in TIME_BASED_EXERCISES
+        else SETS_REPS_BY_DIFFICULTY[difficulty]
+    )
     return [
-        SetEntry(setNumber=i + 1, weight=None, reps=reps, completed=False)
+        SetEntry(setNumber=i + 1, weight=None, reps=metric, completed=False)
         for i in range(sets)
     ]
 
@@ -65,8 +76,9 @@ def generate_workout(db: Session, req: GenerateWorkoutRequest) -> Workout:
                 workoutExerciseId=str(uuid.uuid4()),
                 exerciseId=ex.id,
                 name=ex.name,
+                specificMuscle=ex.specificMuscle,
                 equipment=ex.equipment,
-                sets=_default_sets(req.difficulty),
+                sets=_default_sets(req.difficulty, ex.name),
                 description=ex.description,
             )
         )
@@ -84,6 +96,9 @@ def replace_exercise(
     db: Session,
     req: ReplaceExerciseRequest,
 ) -> ReplaceExerciseResponse | None:
+    excluded_ids = set(req.excludeExerciseIds or [])
+    excluded_ids.add(req.currentExerciseId)
+
     current = (
         db.query(ExerciseORM)
         .filter(ExerciseORM.id == req.currentExerciseId)
@@ -100,15 +115,8 @@ def replace_exercise(
         .all()
     )
 
-    if not candidates:
-        # Fallback: same muscle group, same difficulty
-        candidates = (
-            db.query(ExerciseORM)
-            .filter(ExerciseORM.muscleGroup == current.muscleGroup)
-            .filter(ExerciseORM.difficulty == current.difficulty)
-            .filter(ExerciseORM.id != current.id)
-            .all()
-        )
+    if excluded_ids:
+        candidates = [candidate for candidate in candidates if candidate.id not in excluded_ids]
 
     if not candidates:
         return None
@@ -120,7 +128,8 @@ def replace_exercise(
         workoutExerciseId=req.workoutExerciseId,
         exerciseId=chosen.id,
         name=chosen.name,
+        specificMuscle=chosen.specificMuscle,
         equipment=chosen.equipment,
-        sets=_default_sets(difficulty_enum),
+        sets=_default_sets(difficulty_enum, chosen.name),
         description=chosen.description,
     )

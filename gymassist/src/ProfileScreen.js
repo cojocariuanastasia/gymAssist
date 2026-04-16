@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from "react";
 
 const API = "http://localhost:8000";
+const TIME_BASED_EXERCISES = new Set(["plank", "lateral plank", "wall sit"]);
+
+const isTimeBasedExercise = (name) =>
+  TIME_BASED_EXERCISES.has((name || "").trim().toLowerCase());
 
 const MONTH_NAMES = [
   "January","February","March","April","May","June",
@@ -195,7 +199,8 @@ export default function ProfileScreen({ token, onStartTraining, onLogout }) {
                 </p>
                 {w.exercises.map((e, i) => (
                   <p key={i} style={s.exerciseLine}>
-                    {e.name} — {e.sets} × {e.reps} reps
+                    {e.name} — {e.sets} × {e.reps} {isTimeBasedExercise(e.name) ? "seconds" : "reps"}
+                    {e.weight != null && e.weight !== "" ? ` · ${e.weight} kg` : ""}
                   </p>
                 ))}
               </div>
