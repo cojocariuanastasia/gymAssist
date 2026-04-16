@@ -201,7 +201,23 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ muscleGroup: selectedMuscle, difficulty }),
       });
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      if (!res.ok) {
+        let message = "We couldn't generate a workout. Please try another combination.";
+
+        try {
+          const errorBody = await res.json();
+          if (typeof errorBody?.detail === "string") {
+            message = errorBody.detail;
+          } else if (res.status === 404) {
+            message = "No exercises found for this muscle group and difficulty.";
+          }
+        } catch {
+          // Ignore JSON parse errors and fall back to the generic message
+        }
+
+        throw new Error(message);
+      }
+
       const data = await res.json();
       setWorkout(data);
       setScreen("workout");
