@@ -178,10 +178,13 @@ export default function App() {
   const [limitReached, setLimitReached] = useState(false);
 
   useEffect(() => {
-    localStorage.removeItem("token");
-    setToken(null);
-    setUsername("");
-    setScreen("login");
+    const storedToken = localStorage.getItem("token");
+    if (storedToken) {
+      setToken(storedToken);
+      setScreen("select");
+    } else {
+      setScreen("login");
+    }
   }, []);
 
   useEffect(() => {
