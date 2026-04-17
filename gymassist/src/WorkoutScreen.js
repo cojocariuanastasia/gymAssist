@@ -129,7 +129,12 @@ export default function WorkoutScreen({
             equipment: e.equipment,
             sets: e.sets.length,
             reps: e.sets[0]?.reps ?? 0,
-            weight: e.weight === "" || e.weight == null ? null : Number(e.weight),
+            weight:
+              (e.equipment || "").toLowerCase() === "bodyweight" ||
+              e.weight === "" ||
+              e.weight == null
+                ? null
+                : Number(e.weight),
           })),
         }),
       });
@@ -173,6 +178,7 @@ export default function WorkoutScreen({
           const isExpanded = expandedDesc[exercise.workoutExerciseId];
           const imageUrl = `${API}/api/exercises/${exercise.exerciseId}/image`;
           const isTimeBased = isTimeBasedExercise(exercise.name);
+          const isBodyweight = (exercise.equipment || "").toLowerCase() === "bodyweight";
 
           return (
             <div
@@ -235,22 +241,24 @@ export default function WorkoutScreen({
                     }
                   />
                 </label>
-                <label style={s.metricLabel}>
-                  Weight
-                  <input
-                    style={s.metricInput}
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    value={exercise.weight ?? ""}
-                    onChange={(e) =>
-                      updateWeight(
-                        exercise.workoutExerciseId,
-                        e.target.value === "" ? null : Number(e.target.value)
-                      )
-                    }
-                  />
-                </label>
+                {!isBodyweight && (
+                  <label style={s.metricLabel}>
+                    Weight
+                    <input
+                      style={s.metricInput}
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={exercise.weight ?? ""}
+                      onChange={(e) =>
+                        updateWeight(
+                          exercise.workoutExerciseId,
+                          e.target.value === "" ? null : Number(e.target.value)
+                        )
+                      }
+                    />
+                  </label>
+                )}
                 <button
                   style={s.replaceBtn}
                   onClick={() => handleReplace(exercise)}

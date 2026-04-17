@@ -30,6 +30,14 @@ SETS_SECONDS_BY_DIFFICULTY: dict[Difficulty, tuple[int, int]] = {
     Difficulty.EXPERT: (5, 45),
 }
 
+DIFFICULTY_ORDER = [Difficulty.BEGINNER, Difficulty.INTERMEDIATE, Difficulty.EXPERT]
+
+
+def _lower_difficulties(difficulty: Difficulty) -> list[Difficulty]:
+    """Returns difficulties lower than given one, from highest to lowest."""
+    idx = DIFFICULTY_ORDER.index(difficulty)
+    return list(reversed(DIFFICULTY_ORDER[:idx]))
+
 
 def _default_sets(difficulty: Difficulty, exercise_name: str) -> list[SetEntry]:
     sets, metric = (
@@ -63,11 +71,36 @@ def generate_workout(db: Session, req: GenerateWorkoutRequest) -> Workout:
         .all()
     )
 
-    if not exercises:
-        raise ValueError("No exercises found for given filters")
+    target_count = random.randint(4, 6)
+    selected: list[ExerciseORM] = []
+    excluded_ids: set[str] = set()
 
-    count = min(len(exercises), random.randint(4, 6))
-    selected = random.sample(exercises, count)
+    if exercises:
+        count = min(len(exercises), target_count)
+        selected = random.sample(exercises, count)
+        excluded_ids = {ex.id for ex in selected}
+
+    # If fewer than 4 exercises at target difficulty, fill from lower difficulties
+    if len(selected) < 4:
+        for lower_diff in _lower_difficulties(req.difficulty):
+            if len(selected) >= target_count:
+                break
+            needed = target_count - len(selected)
+            fallback = (
+                db.query(ExerciseORM)
+                .filter(ExerciseORM.muscleGroup == req.muscleGroup.value)
+                .filter(ExerciseORM.difficulty == lower_diff.value)
+                .all()
+            )
+            fallback = [ex for ex in fallback if ex.id not in excluded_ids]
+            if fallback:
+                fill_count = min(len(fallback), needed)
+                fill = random.sample(fallback, fill_count)
+                selected.extend(fill)
+                excluded_ids.update(ex.id for ex in fill)
+
+    if not selected:
+        raise ValueError("No exercises found for given filters")
 
     workout_exercises: list[WorkoutExercise] = []
     for ex in selected:
@@ -78,6 +111,7 @@ def generate_workout(db: Session, req: GenerateWorkoutRequest) -> Workout:
                 name=ex.name,
                 specificMuscle=ex.specificMuscle,
                 equipment=ex.equipment,
+                # Always use target difficulty sets/reps (more volume for lower-difficulty fillers)
                 sets=_default_sets(req.difficulty, ex.name),
                 description=ex.description,
             )
@@ -118,11 +152,27 @@ def replace_exercise(
     if excluded_ids:
         candidates = [candidate for candidate in candidates if candidate.id not in excluded_ids]
 
+    # If no candidates at same difficulty, fall back to lower difficulties in same muscle group
+    if not candidates:
+        for lower_diff in _lower_difficulties(Difficulty(current.difficulty)):
+            fallback = (
+                db.query(ExerciseORM)
+                .filter(ExerciseORM.muscleGroup == current.muscleGroup)
+                .filter(ExerciseORM.difficulty == lower_diff.value)
+                .all()
+            )
+            fallback = [ex for ex in fallback if ex.id not in excluded_ids]
+            if fallback:
+                candidates = fallback
+                break
+
     if not candidates:
         return None
 
     chosen = random.choice(candidates)
-    difficulty_enum = Difficulty(chosen.difficulty)
+    # Use the original exercise's difficulty for sets/reps so lower-difficulty replacements
+    # get more volume (making them harder to compensate)
+    original_difficulty = Difficulty(current.difficulty)
 
     return ReplaceExerciseResponse(
         workoutExerciseId=req.workoutExerciseId,
@@ -130,6 +180,6 @@ def replace_exercise(
         name=chosen.name,
         specificMuscle=chosen.specificMuscle,
         equipment=chosen.equipment,
-        sets=_default_sets(difficulty_enum, chosen.name),
+        sets=_default_sets(original_difficulty, chosen.name),
         description=chosen.description,
     )

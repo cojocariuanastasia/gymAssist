@@ -11,13 +11,13 @@ const MONTH_NAMES = [
   "July","August","September","October","November","December",
 ];
 
+// workoutDates is now a dict {dateStr: count}
 function Calendar({ workoutDates, onDayClick, selectedDay }) {
   const [cur, setCur] = useState(new Date());
   const year = cur.getFullYear();
   const month = cur.getMonth();
   const firstWeekday = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const workoutSet = new Set(workoutDates);
 
   const cells = [
     ...Array(firstWeekday).fill(null),
@@ -56,7 +56,8 @@ function Calendar({ workoutDates, onDayClick, selectedDay }) {
           const mm = String(month + 1).padStart(2, "0");
           const dd = String(day).padStart(2, "0");
           const dateStr = `${year}-${mm}-${dd}`;
-          const hasWorkout = workoutSet.has(dateStr);
+          const count = workoutDates[dateStr] ?? 0;
+          const hasWorkout = count > 0;
           const isSelected = dateStr === selectedDay;
           const isToday = dateStr === new Date().toISOString().split("T")[0];
 
@@ -75,15 +76,11 @@ function Calendar({ workoutDates, onDayClick, selectedDay }) {
                 {day}
               </span>
               {hasWorkout && (
-                <div
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: "50%",
-                    background: "#f97316",
-                    margin: "2px auto 0",
-                  }}
-                />
+                <div style={cal.dots}>
+                  {Array.from({ length: count }).map((_, di) => (
+                    <div key={di} style={cal.dot} />
+                  ))}
+                </div>
               )}
             </div>
           );
@@ -99,14 +96,20 @@ export default function ProfileScreen({ token, onStartTraining, onLogout }) {
   const [selectedDay, setSelectedDay] = useState(null);
   const [dayWorkouts, setDayWorkouts] = useState([]);
   const [dayLoading, setDayLoading] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
+  const fetchProfile = () => {
     fetch(`${API}/api/profile`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => r.json())
       .then(setProfile)
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchProfile();
   }, [token]);
 
   const handleDayClick = async (dateStr) => {
@@ -125,6 +128,26 @@ export default function ProfileScreen({ token, onStartTraining, onLogout }) {
       setDayWorkouts(data);
     } finally {
       setDayLoading(false);
+    }
+  };
+
+  const handleDeleteWorkout = async (workoutId) => {
+    setDeleting(true);
+    try {
+      await fetch(`${API}/api/profile/workouts/${workoutId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const remaining = dayWorkouts.filter((w) => w.id !== workoutId);
+      setDayWorkouts(remaining);
+      if (remaining.length === 0) {
+        setSelectedDay(null);
+      }
+      setLoading(true);
+      fetchProfile();
+    } finally {
+      setConfirmDeleteId(null);
+      setDeleting(false);
     }
   };
 
@@ -203,6 +226,32 @@ export default function ProfileScreen({ token, onStartTraining, onLogout }) {
                     {e.weight != null && e.weight !== "" ? ` · ${e.weight} kg` : ""}
                   </p>
                 ))}
+                {confirmDeleteId === w.id ? (
+                  <div style={s.confirmRow}>
+                    <span style={s.confirmText}>Delete this workout?</span>
+                    <button
+                      style={s.confirmYesBtn}
+                      onClick={() => handleDeleteWorkout(w.id)}
+                      disabled={deleting}
+                    >
+                      {deleting ? "..." : "Yes"}
+                    </button>
+                    <button
+                      style={s.confirmNoBtn}
+                      onClick={() => setConfirmDeleteId(null)}
+                      disabled={deleting}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    style={s.deleteBtn}
+                    onClick={() => setConfirmDeleteId(w.id)}
+                  >
+                    Delete workout
+                  </button>
+                )}
               </div>
             ))
           )}
@@ -315,6 +364,50 @@ const s = {
     color: "#d1d5db",
     margin: "2px 0",
   },
+  deleteBtn: {
+    marginTop: 8,
+    padding: "7px 14px",
+    borderRadius: 999,
+    border: "1px solid #7f1d1d",
+    background: "transparent",
+    color: "#f87171",
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+  },
+  confirmRow: {
+    marginTop: 8,
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  confirmText: {
+    fontSize: 12,
+    color: "#f87171",
+    fontWeight: 600,
+    flex: 1,
+  },
+  confirmYesBtn: {
+    padding: "6px 14px",
+    borderRadius: 999,
+    border: "none",
+    background: "#dc2626",
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+  confirmNoBtn: {
+    padding: "6px 14px",
+    borderRadius: 999,
+    border: "1px solid #374151",
+    background: "transparent",
+    color: "#9ca3af",
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+  },
   trainBtn: {
     marginTop: 24,
     width: "calc(100% - 40px)",
@@ -377,5 +470,17 @@ const cal = {
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
+  },
+  dots: {
+    display: "flex",
+    gap: 3,
+    justifyContent: "center",
+    marginTop: 2,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: "50%",
+    background: "#f97316",
   },
 };

@@ -109,7 +109,12 @@ def get_profile(authorization: str = Header(default=""), db: Session = Depends(g
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     logs = db.query(WorkoutLogORM).filter(WorkoutLogORM.user_id == user.id).all()
-    dates = sorted({log.date for log in logs})
+
+    workout_counts: dict[str, int] = {}
+    for log in logs:
+        workout_counts[log.date] = workout_counts.get(log.date, 0) + 1
+
+    dates = sorted(workout_counts.keys())
     date_set = set(dates)
 
     this_month = date.today().strftime("%Y-%m")
@@ -120,7 +125,7 @@ def get_profile(authorization: str = Header(default=""), db: Session = Depends(g
         "streak": _calculate_streak(date_set),
         "days_this_month": sum(1 for d in dates if d.startswith(this_month)),
         "total_days": len(dates),
-        "workout_dates": dates,
+        "workout_dates": workout_counts,
     }
 
 
@@ -198,6 +203,29 @@ def seed_mock_back_workouts(
 #     db.commit()
 
 #     return {"ok": True, "deleted": deleted, "date": today}
+
+
+@router.delete("/workouts/{workout_id}")
+def delete_workout(
+    workout_id: str,
+    authorization: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    user = get_current_user(db, _extract_token(authorization))
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    log = (
+        db.query(WorkoutLogORM)
+        .filter(WorkoutLogORM.id == workout_id, WorkoutLogORM.user_id == user.id)
+        .first()
+    )
+    if not log:
+        raise HTTPException(status_code=404, detail="Workout not found.")
+
+    db.delete(log)
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/last-workout/{muscle_group}")

@@ -38,6 +38,28 @@ class CompleteWorkoutRequest(BaseModel):
     exercises: list[LoggedExercise]
 
 
+@router.get("/today")
+def get_today_status(
+    authorization: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    token = authorization.removeprefix("Bearer ").strip()
+    user = get_current_user(db, token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    today = date.today().isoformat()
+    logs = (
+        db.query(WorkoutLogORM)
+        .filter(WorkoutLogORM.user_id == user.id, WorkoutLogORM.date == today)
+        .all()
+    )
+    worked_muscles = [log.muscle_group for log in logs]
+    return {
+        "workedMuscles": worked_muscles,
+        "limitReached": len(worked_muscles) >= 2,
+    }
+
+
 @router.post("/generate")
 async def generate(req: GenerateWorkoutRequest, db: Session = Depends(get_db)):
     try:
@@ -84,12 +106,19 @@ def complete_workout(
     existing_today = (
         db.query(WorkoutLogORM)
         .filter(WorkoutLogORM.user_id == user.id, WorkoutLogORM.date == today)
-        .first()
+        .all()
     )
-    if existing_today is not None:
+    worked_muscles = [log.muscle_group for log in existing_today]
+
+    if req.muscleGroup in worked_muscles:
         raise HTTPException(
             status_code=409,
-            detail="You already have a workout saved for today. Delete today's workout first if you want to create a new one.",
+            detail=f"You already trained {req.muscleGroup} today.",
+        )
+    if len(worked_muscles) >= 2:
+        raise HTTPException(
+            status_code=409,
+            detail="You have already trained 2 muscle groups today. Come back tomorrow!",
         )
 
     log = WorkoutLogORM(

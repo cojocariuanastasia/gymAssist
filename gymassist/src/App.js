@@ -39,7 +39,7 @@ function LoginScreen({ onLogin, onGoRegister }) {
   };
 
   return (
-    <div style={s.container}>
+    <div style={s.authContainer}>
       <h1 style={s.brand}>GymAssist</h1>
       <form onSubmit={handleSubmit} style={s.form}>
         <input style={s.input} type="email" placeholder="Email" value={email}
@@ -89,7 +89,7 @@ function RegisterScreen({ onLogin, onGoLogin }) {
   };
 
   return (
-    <div style={s.container}>
+    <div style={s.authContainer}>
       <h1 style={s.brand}>GymAssist</h1>
       <form onSubmit={handleSubmit} style={s.form}>
         <input style={s.input} type="text" placeholder="Username" value={username}
@@ -174,6 +174,8 @@ export default function App() {
   const [historyPrompt, setHistoryPrompt] = useState(null);
   const [historyWorkout, setHistoryWorkout] = useState(null);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [todayMuscles, setTodayMuscles] = useState([]);
+  const [limitReached, setLimitReached] = useState(false);
 
   useEffect(() => {
     localStorage.removeItem("token");
@@ -181,6 +183,20 @@ export default function App() {
     setUsername("");
     setScreen("login");
   }, []);
+
+  useEffect(() => {
+    if (screen === "select" && token) {
+      fetch(`${API}/api/workout/today`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((r) => r.json())
+        .then((d) => {
+          setTodayMuscles(d.workedMuscles ?? []);
+          setLimitReached(d.limitReached ?? false);
+        })
+        .catch(() => {});
+    }
+  }, [screen, token]);
 
   const handleLogin = (tok, uname) => {
     localStorage.setItem("token", tok);
@@ -373,18 +389,40 @@ export default function App() {
       <TopBar username={username} onGoProfile={() => setScreen("profile")} />
       <div style={s.inner}>
         <h2 style={s.title}>What do you train today?</h2>
-        <div style={s.btnGroup}>
-          {MUSCLE_GROUPS.map((muscle) => (
-            <button
-              key={muscle}
-              style={s.muscleBtn}
-              onClick={() => handleSelectMuscle(muscle)}
-              disabled={historyLoading}
-            >
-              {muscle}
-            </button>
-          ))}
+
+        <div style={s.dailyInfo}>
+          You can train up to <strong>2 muscle groups per day</strong>.
+          {todayMuscles.length > 0 && (
+            <span> Today: <strong>{todayMuscles.join(" · ")}</strong> ({todayMuscles.length}/2)</span>
+          )}
         </div>
+
+        {limitReached ? (
+          <div style={s.doneToday}>
+            You have trained 2 muscle groups today. Come back tomorrow!
+          </div>
+        ) : (
+          <div style={s.btnGroup}>
+            {MUSCLE_GROUPS.map((muscle) => {
+              const alreadyDone = todayMuscles.includes(muscle);
+              return (
+                <button
+                  key={muscle}
+                  style={{
+                    ...s.muscleBtn,
+                    opacity: alreadyDone ? 0.4 : 1,
+                    cursor: alreadyDone ? "not-allowed" : "pointer",
+                  }}
+                  onClick={() => !alreadyDone && handleSelectMuscle(muscle)}
+                  disabled={historyLoading || alreadyDone}
+                  title={alreadyDone ? `${muscle} already trained today` : ""}
+                >
+                  {muscle}{alreadyDone ? " ✓" : ""}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <RepeatWorkoutModal
@@ -414,6 +452,18 @@ const s = {
     alignItems: "center",
     background: "#06162d",
     color: "#fff",
+  },
+  authContainer: {
+    minHeight: "100vh",
+    fontFamily: "'Segoe UI', Arial, sans-serif",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "#06162d",
+    color: "#fff",
+    padding: "0 24px",
+    boxSizing: "border-box",
   },
   inner: {
     flex: 1,
@@ -523,6 +573,24 @@ const s = {
   },
   loadingTitle: { fontSize: 20, fontWeight: 700, margin: 0 },
   loadingSubtitle: { fontSize: 14, color: "#9ca3af", margin: 0 },
+  dailyInfo: {
+    fontSize: 13,
+    color: "#9ca3af",
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  doneToday: {
+    marginTop: 8,
+    padding: "16px 20px",
+    borderRadius: 16,
+    background: "#1f2937",
+    border: "1px solid #374151",
+    color: "#f97316",
+    fontSize: 15,
+    fontWeight: 600,
+    textAlign: "center",
+    maxWidth: 340,
+  },
   error: { color: "#f87171", fontSize: 13, marginTop: 4 },
   modalBackdrop: {
     position: "fixed",
