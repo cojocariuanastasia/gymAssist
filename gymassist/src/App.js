@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import WorkoutScreen from "./WorkoutScreen";
 import ProfileScreen from "./ProfileScreen";
+import logo from "./logo.png";
 
 const API = "http://localhost:8000";
 
@@ -126,10 +127,12 @@ function LoadingScreen({ muscle, difficulty }) {
 
 // ─── Top nav bar (shown on select / difficulty screens) ──────────────────────
 
-function TopBar({ username, onGoProfile }) {
+function TopBar({ username, onGoProfile, onGoStart }) {
   return (
     <div style={s.topBar}>
-      <span style={s.appName}>GymAssist</span>
+      <button type="button" style={s.logoButton} onClick={onGoStart} aria-label="Go to start">
+        <img src={logo} alt="GymAssist" style={s.appLogo} />
+      </button>
       <button style={s.profileBtn} onClick={onGoProfile}>
         {username} ›
       </button>
@@ -360,7 +363,11 @@ export default function App() {
   if (screen === "difficulty") {
     return (
       <div style={s.container}>
-        <TopBar username={username} onGoProfile={() => setScreen("profile")} />
+        <TopBar
+          username={username}
+          onGoProfile={() => setScreen("profile")}
+          onGoStart={() => setScreen("select")}
+        />
         <div style={s.inner}>
           <h2 style={s.title}>Select difficulty</h2>
           <p style={s.subtitle}>{selectedMuscle}</p>
@@ -386,7 +393,11 @@ export default function App() {
   // select screen (default)
   return (
     <div style={s.container}>
-      <TopBar username={username} onGoProfile={() => setScreen("profile")} />
+      <TopBar
+        username={username}
+        onGoProfile={() => setScreen("profile")}
+        onGoStart={() => setScreen("select")}
+      />
       <div style={s.inner}>
         <h2 style={s.title}>What do you train today?</h2>
 
@@ -480,18 +491,31 @@ const s = {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: "16px 20px",
+    padding: "1px 20px",
     borderBottom: "1px solid #1f2937",
     boxSizing: "border-box",
   },
-  appName: { fontSize: 18, fontWeight: 700, color: "#f97316" },
+  appLogo: {
+    height: 80,
+    width: "auto",
+    objectFit: "contain",
+    display: "block",
+  },
+  logoButton: {
+    background: "none",
+    border: "none",
+    padding: 0,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+  },
   profileBtn: {
     background: "none",
     border: "1px solid #374151",
     borderRadius: 999,
     color: "#d1d5db",
     cursor: "pointer",
-    fontSize: 13,
+    fontSize: 18,
     padding: "6px 14px",
   },
   brand: {

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import logo from "./logo.png";
 
 const API = "http://localhost:8000";
 const TIME_BASED_EXERCISES = new Set(["plank", "lateral plank", "wall sit"]);
@@ -162,7 +163,9 @@ export default function ProfileScreen({ token, onStartTraining, onLogout }) {
   return (
     <div style={s.container}>
       <div style={s.topBar}>
-        <span style={s.appName}>GymAssist</span>
+        <button type="button" style={s.logoButton} onClick={onStartTraining} aria-label="Go to start">
+          <img src={logo} alt="GymAssist" style={s.appLogo} />
+        </button>
         <button style={s.logoutBtn} onClick={onLogout}>
           Logout
         </button>
@@ -290,18 +293,31 @@ const s = {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: "16px 20px",
+    padding: "1px 20px",
     borderBottom: "1px solid #1f2937",
     boxSizing: "border-box",
   },
-  appName: { fontSize: 18, fontWeight: 700, color: "#f97316" },
+  appLogo: {
+    height: 80,
+    width: "auto",
+    objectFit: "contain",
+    display: "block",
+  },
+  logoButton: {
+    background: "none",
+    border: "none",
+    padding: 0,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+  },
   logoutBtn: {
     background: "none",
     border: "1px solid #374151",
     borderRadius: 999,
     color: "#9ca3af",
     cursor: "pointer",
-    fontSize: 13,
+    fontSize: 18,
     padding: "6px 14px",
   },
   username: {
