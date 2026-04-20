@@ -60,10 +60,21 @@ test.describe('Track Workout Progress Tests', () => {
   test('TWP-02: Time based exercises support', async ({ page, request }) => {
     // First add a time based exercise to test
     // We will test that when workout loads, plank/lateral plank/wall sit show seconds not reps
-
     await page.getByRole('button', { name: 'Abdominals' }).click();
     await page.getByRole('button', { name: 'Beginner' }).click();
     await expect(page.getByRole('button', { name: 'Replace' }).first()).toBeVisible({ timeout: 10000 });
+
+    // Check if any exercise has Seconds label, retry replacing exercises until we find a time based one
+    let foundSeconds = await page.getByText('Seconds').count() > 0;
+    let replaceAttempts = 0;
+    
+    while (!foundSeconds && replaceAttempts < 10) {
+      // Replace first exercise until we get a time based one
+      await page.getByRole('button', { name: 'Replace' }).first().click();
+      await page.waitForTimeout(500);
+      foundSeconds = await page.getByText('Seconds').count() > 0;
+      replaceAttempts++;
+    }
 
     // Then duration in seconds is displayed instead of sets/repetitions
     // For plank exercise will have "Seconds" label
@@ -111,7 +122,7 @@ test.describe('Track Workout Progress Tests', () => {
     await page.getByRole('button', { name: 'Beginner' }).click();
     await expect(page.getByRole('button', { name: 'Replace' }).first()).toBeVisible({ timeout: 10000 });
 
-    // Given user clicks "Discard Workout"
+    // Given user clicks "Back"
     await page.getByRole('button', { name: 'Back' }).click();
 
     // Then workout progress is lost

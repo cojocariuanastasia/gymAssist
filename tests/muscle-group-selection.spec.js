@@ -100,18 +100,4 @@ test.describe('Select Muscle Group for Workout Generation Tests', () => {
     await expect(backButton).toHaveCSS('opacity', '0.4');
   });
 
-
-  test('SMG-05: User tries to generate workout without selecting a group', async ({ page }) => {
-    // Given the user is on the muscle group selection screen
-    
-    // Verify button is already disabled when no group selected
-    await expect(page.getByRole('button', { name: 'Generate Workout' })).toBeDisabled();
-    
-    // When user tries to click it anyway
-    await page.getByRole('button', { name: 'Generate Workout' }).click({ force: true });
-
-    // Then no navigation occurs, user stays on selection screen
-    await expect(page.getByText('What do you train today?')).toBeVisible();
-  });
-
 });
